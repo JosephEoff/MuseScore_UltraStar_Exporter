@@ -44,8 +44,8 @@ MuseScore {
         loadInstrumentList(staffList)
         instrumentPlayer1.model = staffList
         instrumentPlayer2.model = staffList
-        loadVoiceList(instrumentPlayer1.currentText, player1Voices)
-        loadVoiceList(instrumentPlayer2.currentText, player2Voices)
+        loadVoiceList(instrumentPlayer1.currentText, player1Voices, voicePlayer1)
+        loadVoiceList(instrumentPlayer2.currentText, player2Voices, voicePlayer2)
         directorySelectDialog.folder = exportDirectory.text
         //exportDirectory.text = directorySelectDialog.fileUrl.toString().replace(
         // "file://", "")
@@ -60,18 +60,21 @@ MuseScore {
         }
     }
 
-    function loadVoiceList(instrumentName, voiceList) {
+    function loadVoiceList(instrumentName, voiceList, voiceCombo) {
         for (var i = 0; i < curScore.parts.length; i++) {
             if (curScore.parts[i].partName === instrumentName) {
                 voiceList.clear()
                 for (var j = 0; j < curScore.parts[i].endTrack
                      - curScore.parts[i].startTrack; j++) {
                     voiceList.append({
-                                         j: j
+                                         j: qsTr("Voice") + ' ' + (j + 1)
                                      })
                 }
             }
         }
+        voiceCombo.model = voiceList      //applying the new list sets currentIndex to 0, but doesn't update the shown comboboxText
+        voiceCombo.currentIndex = 1 //force an indexChange to force the combo to update its label
+        voiceCombo.currentIndex = 0 //force indexChange back to default, now the label will be updated
     }
 
     Settings {
@@ -174,8 +177,7 @@ MuseScore {
                     ComboBox {
                         id: instrumentPlayer1
                         onCurrentIndexChanged: {
-                            loadVoiceList(currentText, player1Voices)
-                            voicePlayer1.model = player1Voices
+                            loadVoiceList(currentText, player1Voices, voicePlayer1)
                         }
                     }
                     Label {
@@ -206,8 +208,7 @@ MuseScore {
                     ComboBox {
                         id: instrumentPlayer2
                         onCurrentIndexChanged: {
-                            loadVoiceList(currentText, player2Voices)
-                            voicePlayer2.model = player2Voices
+                            loadVoiceList(currentText, player2Voices, voicePlayer2)
                         }
                     }
                     Label {
@@ -338,8 +339,7 @@ MuseScore {
         while (cursor.segment) {
 
             if (needABreak && gotfirstsyllable) {
-                timestamp_midi_ticks = calculateMidiTicksfromTicks(cursor.tick,
-                                                                   bpm)
+                timestamp_midi_ticks = calculateMidiTicksfromTicks(cursor.tick)
                 songContent += "-" + timestamp_midi_ticks + crlf
                 needABreak = false
             }
@@ -362,10 +362,8 @@ MuseScore {
                 }
 
                 pitch_midi = cursor.element.notes[0].ppitch
-                duration_midi_ticks = calculateMidiTicksfromTicks(
-                            cursor.element.duration.ticks, bpm)
-                timestamp_midi_ticks = calculateMidiTicksfromTicks(cursor.tick,
-                                                                   bpm)
+                duration_midi_ticks = calculateMidiTicksfromTicks(cursor.element.duration.ticks)
+                timestamp_midi_ticks = calculateMidiTicksfromTicks(cursor.tick)
 
                 if (!gotfirstsyllable) {
                     gotfirstsyllable = true
@@ -403,8 +401,10 @@ MuseScore {
         return false
     }
 
-    function calculateMidiTicksfromTicks(ticks, bpm) {
-        return Math.round((ticks / 490.96154) * 60 / bpm * 15)
+    function calculateMidiTicksfromTicks(ticks) {
+		// /5 because values at https://musescore.org/plugin-development/tick-length-values are all multiples of 5
+		// and we want to have maximal precision whilst keeping numeric values as small as possible
+		return (ticks / 5)
     }
 
     function getCursor(instrument, voice) {
@@ -428,7 +428,14 @@ MuseScore {
             for (var i = 0; i < cursor.segment.annotations.length; i++) {
                 if (cursor.segment.annotations[i].type === Element.TEMPO_TEXT) {
                     console.log("Tempo: " + cursor.segment.annotations[i].tempo)
-                    return cursor.segment.annotations[i].tempo * 60
+					//tempo is a % compared to 60bpm (tempo == 1 -> bpm == 60)
+					//division is a global variable holding the tickLength of a crochet(1/4th note)
+					//scaling tempo with tickLength allows very precise approximation of real note lengths in export
+					// *15 for some unknown reason, likely because 4* crotchet == 60
+					// /5 because values at https://musescore.org/plugin-development/tick-length-values are all multiples of 5
+					// and we want to have maximal precision whilst keeping numeric values as small as possible
+					// so in total we do (*15/5) == * 3
+					return cursor.segment.annotations[i].tempo * division * 3
                 }
             }
             cursor.next()
