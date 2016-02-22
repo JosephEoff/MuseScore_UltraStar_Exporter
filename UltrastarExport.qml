@@ -357,6 +357,23 @@ MuseScore {
                 duration_midi_ticks = calculateMidiTicksfromTicks(cursor.element.duration.ticks);
                 timestamp_midi_ticks = calculateMidiTicksfromTicks(cursor.tick);
 
+                while (cursor.element.notes[0].tieFor != null) {//note is tied to the next one, increment duration
+                    do { //move to next note
+                        cursor.next();
+                    } while (
+                        cursor.segment
+                    && (   !cursor.element
+                        || (cursor.element.type !== Element.CHORD)
+                        )
+                    );
+                    //are we still valid and found the end of the tie?
+                    if (cursor.segment && cursor.element && (cursor.element.type === Element.CHORD)
+                        && (cursor.element.notes[0].tieBack != null)
+                        ) {
+                        duration_midi_ticks += calculateMidiTicksfromTicks(cursor.element.duration.ticks);
+                    }
+                }
+
                 if (!gotfirstsyllable) {
                     gotfirstsyllable = true
                 }
